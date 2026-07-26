@@ -2,14 +2,16 @@ name: TrainingPeaks to Intervals Sync
 
 on:
   schedule:
-    # Runs at 00:00 UTC every 3 days
     - cron: '0 0 */3 * *'
-  workflow_dispatch: # Allows you to trigger the sync manually anytime
+  workflow_dispatch:
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Run tp2intervals Sync
         run: |
           docker run --rm \
