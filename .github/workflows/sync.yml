@@ -1,0 +1,21 @@
+name: TrainingPeaks to Intervals Sync
+
+on:
+  schedule:
+    # Runs at 00:00 UTC every 3 days
+    - cron: '0 0 */3 * *'
+  workflow_dispatch: # Allows you to trigger the sync manually anytime
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run tp2intervals Sync
+        run: |
+          docker run --rm \
+            -e TP_USERNAME="${{ secrets.TP_USERNAME }}" \
+            -e TP_PASSWORD="${{ secrets.TP_PASSWORD }}" \
+            -e INTERVALS_ATHLETE_ID="${{ secrets.INTERVALS_ATHLETE_ID }}" \
+            -e INTERVALS_API_KEY="${{ secrets.INTERVALS_API_KEY }}" \
+            -e DAYS_FORWARD="2" \
+            ghcr.io/freekode/tp2intervals:latest
