@@ -21,16 +21,9 @@ jobs:
 
     steps:
       - name: Start tp2intervals
-        env:
-          APP_DEFAULT_CONFIG_INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
-          APP_DEFAULT_CONFIG_INTERVALS_ATHLETE_ID: ${{ secrets.INTERVALS_ATHLETE_ID }}
-          APP_DEFAULT_CONFIG_TRAINING_PEAKS_AUTH_COOKIE: ${{ secrets.TRAINING_PEAKS_AUTH_COOKIE }}
         run: |
           docker run --detach --name tp2intervals \
             -p 127.0.0.1:8080:8080 \
-            --env APP_DEFAULT_CONFIG_INTERVALS_API_KEY \
-            --env APP_DEFAULT_CONFIG_INTERVALS_ATHLETE_ID \
-            --env APP_DEFAULT_CONFIG_TRAINING_PEAKS_AUTH_COOKIE \
             ghcr.io/freekode/tp2intervals:latest
 
       - name: Wait for tp2intervals
@@ -45,23 +38,53 @@ jobs:
           docker logs tp2intervals || true
           exit 1
 
+      - name: Configure tp2intervals
+        env:
+          INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
+          INTERVALS_ATHLETE_ID: ${{ secrets.INTERVALS_ATHLETE_ID }}
+          TRAINING_PEAKS_AUTH_COOKIE: ${{ secrets.TRAINING_PEAKS_AUTH_COOKIE }}
+        run: |
+          for secret_name in \
+            INTERVALS_API_KEY \
+            INTERVALS_ATHLETE_ID \
+            TRAINING_PEAKS_AUTH_COOKIE; do
+            if [ -z "${!secret_name}" ]; then
+              echo "::error::Required secret ${secret_name} is empty or unavailable."
+              exit 1
+            fi
+          done
+
+          config_payload=$(jq --null-input --compact-output \
+            --arg intervals_api_key "$INTERVALS_API_KEY" \
+            --arg intervals_athlete_id "$INTERVALS_ATHLETE_ID" \
+            --arg training_peaks_auth_cookie "$TRAINING_PEAKS_AUTH_COOKIE" \
+            '{
+              config: {
+                "intervals.api-key": $intervals_api_key,
+                "intervals.athlete-id": $intervals_athlete_id,
+                "training-peaks.auth-cookie": $training_peaks_auth_cookie
+              }
+            }')
+
+          curl --fail-with-body --silent --show-error \
+            --request PUT \
+            --header "Content-Type: application/json" \
+            --data "$config_payload" \
+            http://127.0.0.1:8080/api/configuration
+
       - name: Verify configuration
         run: |
-          if curl --fail --silent http://127.0.0.1:8080/api/configuration |
+          curl --fail --silent http://127.0.0.1:8080/api/configuration |
             jq -e '
-              def present: type == "string" and length > 0;
-              (.config["intervals.api-key"] | present) and
-              (.config["intervals.athlete-id"] | present) and
+              (.config["intervals.api-key"] | type == "string" and length > 0) and
+              (.config["intervals.athlete-id"] | type == "string" and length > 0) and
               (.config["training-peaks.auth-cookie"] |
                 type == "string" and
                 startswith("Production_tpAuth=") and
                 length > 25)
-            ' >/dev/null; then
-            echo "Configuration received by tp2intervals."
-          else
-            echo "::error::tp2intervals did not receive one or more required secrets."
-            exit 1
-          fi
+            ' >/dev/null
+
+          echo "Configuration verified."
 
       - name: Sync planned bike workouts
         run: |
@@ -69,8 +92,6 @@ jobs:
           end_date=$(date -d "+2 days" +%F)
 
           curl --fail-with-body --show-error \
-            --retry 2 \
-            --retry-all-errors \
             --request POST \
             --header "Content-Type: application/json" \
             --data "{
