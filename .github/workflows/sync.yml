@@ -14,11 +14,12 @@ jobs:
 
       - name: Create Env Configuration File
         run: |
-          echo "TP_USERNAME=${{ secrets.TP_USERNAME }}" >> .env
-          echo "TP_PASSWORD=${{ secrets.TP_PASSWORD }}" >> .env
-          echo "INTERVALS_ATHLETE_ID=${{ secrets.INTERVALS_ATHLETE_ID }}" >> .env
-          echo "INTERVALS_API_KEY=${{ secrets.INTERVALS_API_KEY }}" >> .env
+          echo "TP_USERNAME='${{ secrets.TP_USERNAME }}'" >> .env
+          echo "TP_PASSWORD='${{ secrets.TP_PASSWORD }}'" >> .env
+          echo "INTERVALS_ATHLETE_ID='${{ secrets.INTERVALS_ATHLETE_ID }}'" >> .env
+          echo "INTERVALS_API_KEY='${{ secrets.INTERVALS_API_KEY }}'" >> .env
           echo "DAYS_FORWARD=2" >> .env
+
 
       - name: Run Sync via Docker Env File
         run: |
