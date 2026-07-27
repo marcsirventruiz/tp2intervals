@@ -2,7 +2,7 @@ name: TrainingPeaks to Intervals Sync
 
 on:
   schedule:
-    - cron: "0 0 */3 * *"
+    - cron: "0 4 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -72,32 +72,29 @@ jobs:
             --data "$config_payload" \
             http://127.0.0.1:8080/api/configuration
 
-      - name: Verify configuration
+      - name: Sync this calendar week
         run: |
-          curl --fail --silent http://127.0.0.1:8080/api/configuration |
-            jq -e '
-              (.config["intervals.api-key"] | type == "string" and length > 0) and
-              (.config["intervals.athlete-id"] | type == "string" and length > 0) and
-              (.config["training-peaks.auth-cookie"] |
-                type == "string" and
-                startswith("Production_tpAuth=") and
-                length > 25)
-            ' >/dev/null
-
-          echo "Configuration verified."
-
-      - name: Sync planned bike workouts
-        run: |
-          start_date=$(date +%F)
-          end_date=$(date -d "+2 days" +%F)
+          today=$(date +%F)
+          weekday=$(date +%u)
+          monday=$(date -d "${today} -$((weekday - 1)) days" +%F)
+          sunday=$(date -d "${monday} +6 days" +%F)
 
           curl --fail-with-body --show-error \
             --request POST \
             --header "Content-Type: application/json" \
             --data "{
-              \"startDate\": \"${start_date}\",
-              \"endDate\": \"${end_date}\",
-              \"types\": [\"BIKE\", \"VIRTUAL_BIKE\", \"MTB\"],
+              \"startDate\": \"${monday}\",
+              \"endDate\": \"${sunday}\",
+              \"types\": [
+                \"BIKE\",
+                \"VIRTUAL_BIKE\",
+                \"MTB\",
+                \"RUN\",
+                \"SWIM\",
+                \"WALK\",
+                \"WEIGHT\",
+                \"UNKNOWN\"
+              ],
               \"skipSynced\": true,
               \"sourcePlatform\": \"TRAINING_PEAKS\",
               \"targetPlatform\": \"INTERVALS\"
