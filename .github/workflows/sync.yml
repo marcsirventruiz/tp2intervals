@@ -2,25 +2,73 @@ name: TrainingPeaks to Intervals Sync
 
 on:
   schedule:
-    - cron: '0 0 */3 * *'
+    - cron: "0 0 */3 * *"
   workflow_dispatch:
+
+concurrency:
+  group: tp2intervals-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TZ: Europe/Madrid
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Create Env Configuration File
+      - name: Start tp2intervals
+        env:
+          APP_DEFAULT_CONFIG_INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
+          APP_DEFAULT_CONFIG_INTERVALS_ATHLETE_ID: ${{ secrets.INTERVALS_ATHLETE_ID }}
+          APP_DEFAULT_CONFIG_TRAINING_PEAKS_AUTH_COOKIE: ${{ secrets.TRAINING_PEAKS_AUTH_COOKIE }}
         run: |
-          echo "TP_USERNAME='${{ secrets.TP_USERNAME }}'" >> .env
-          echo "TP_PASSWORD='${{ secrets.TP_PASSWORD }}'" >> .env
-          echo "INTERVALS_ATHLETE_ID='${{ secrets.INTERVALS_ATHLETE_ID }}'" >> .env
-          echo "INTERVALS_API_KEY='${{ secrets.INTERVALS_API_KEY }}'" >> .env
-          echo "DAYS_FORWARD=2" >> .env
+          docker run --detach --name tp2intervals \
+            -p 127.0.0.1:8080:8080 \
+            --env APP_DEFAULT_CONFIG_INTERVALS_API_KEY \
+            --env APP_DEFAULT_CONFIG_INTERVALS_ATHLETE_ID \
+            --env APP_DEFAULT_CONFIG_TRAINING_PEAKS_AUTH_COOKIE \
+            ghcr.io/freekode/tp2intervals:latest
 
-
-      - name: Run Sync via Docker Env File
+      - name: Wait for service
         run: |
-          docker run --rm --env-file .env ghcr.io/freekode/tp2intervals:latest
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/actuator/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs tp2intervals || true
+          exit 1
+
+      - name: Sync planned bike workouts
+        run: |
+          start_date=$(date +%F)
+          end_date=$(date -d '+2 days' +%F)
+
+          curl --fail-with-body --show-error \
+            --retry 2 \
+            --retry-all-errors \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --data "{
+              \"startDate\": \"${start_date}\",
+              \"endDate\": \"${end_date}\",
+              \"types\": [\"BIKE\", \"VIRTUAL_BIKE\", \"MTB\"],
+              \"skipSynced\": true,
+              \"sourcePlatform\": \"TRAINING_PEAKS\",
+              \"targetPlatform\": \"INTERVALS\"
+            }" \
+            http://127.0.0.1:8080/api/workout/copy-calendar-to-calendar
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker logs tp2intervals || true
+
+      - name: Stop tp2intervals
+        if: always()
+        run: docker rm --force tp2intervals || true
